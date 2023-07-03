@@ -1,7 +1,8 @@
 import openai
 
 openai.api_key = ""
-model_engine = "gpt-3.5-turbo-0613"
+model_engine = ""
+user_name = "Diego"
 
 def summarize():
     contextFile = open('memory.txt','r+')
@@ -14,7 +15,7 @@ def summarize():
                 ])
     print(response)
     open('memory.txt', 'w').close()
-    open('memory.txt','r+').write("Your name is Mihari."+"\n"+response["choices"][0]["message"]["content"])
+    open('memory.txt','r+').write("The user is called " + user_name + ". "+"\n"+"Your name is Mihari."+"\n"+response["choices"][0]["message"]["content"])
     contextFile.close()
 
 summarize()
