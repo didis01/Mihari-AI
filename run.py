@@ -1,12 +1,18 @@
 import openai
-import re
-import random
 import requests
 import os
 from lxml import html
-from telegram import ForceReply, Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import ForceReply, Update, Message
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackContext
 import time
+import requests
+import urllib
+from random import randint
+from deep_translator import GoogleTranslator
+import subprocess
+
+
+
 
 DEBUG = 1
 
@@ -54,9 +60,76 @@ async def engine(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         contextw.close()
         smemw.close()
         logw.close()
-        await update.message.reply_text(response["choices"][0]["message"]["content"])
-        await update.message.reply_text("Tokens used: "+str(response["usage"]["total_tokens"]))
+        if randint(0,3) == 2:
+            y=GoogleTranslator(source='auto', target='ja').translate(z)
+
+            with open("output.wav", "wb") as outfile:
+                outfile.write(voice(y).content)
+                await update.message.reply_voice("output.wav")
+            await update.message.reply_text("Audio transcription in english:" + "\n" + z)
+            await update.message.reply_text("Tokens used: "+str(response["usage"]["total_tokens"]))
+        else:
+            await update.message.reply_text(z)
+            await update.message.reply_text("Tokens used: "+str(response["usage"]["total_tokens"]))
         os.system("python sm.py")
+
+async def voice_engine(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        os.remove('output.oga')
+    except:
+        print("no file")
+    new_file =await context.bot.get_file(update.message.voice.file_id)
+    open('output.oga', 'wb').write(requests.get(new_file.file_path).content)
+    print(new_file.file_path)
+    try:
+        os.remove('output.wav')
+    except:
+        print("no file")
+    subprocess.run(['ffmpeg', '-i', 'output.oga', 'output.wav'])
+    transcription = openai.Audio.transcribe("whisper-1", open("output.wav", "rb"))
+    print(transcription.text)
+    await update.message.reply_text("Audio transcription: " + transcription.text)
+    contextr = open('memory.txt','r').read()
+    open('memory.txt','r').close()
+    contextw = open('memory.txt','w')
+    log = open('log.txt','r')
+    logw = open('log.txt','w')
+    smemw = open('lastmem.txt','w')
+    smemr = open('lastmem.txt','r')
+    logwrite = log.read()
+    log.close()
+
+        
+    x="Tis is your personality and abilities: " + lore + "\n" + "This is a summary of the previous conversation: " + contextr + "This are the last 2 messages: " + smemr.read()
+    open('lastmem.txt', 'w').close()
+    smemr.close()
+    y=transcription.text
+    response = openai.ChatCompletion.create(
+          model=model_engine,
+          messages=[{"role": "system", "content":x },
+                    {"role": "user", "content": y}
+          ])
+    print(response)
+    z=response["choices"][0]["message"]["content"]
+    contextw.write(contextr + "\n" + "User: " + y + "\n" + "Mihari: " + z + "\n")
+    logw.write(logwrite + "\n" + "User: " + y + "\n" + "Mihari: " + z + "\n")
+    smemw.write("User: " + y + "\n" + "Mihari: " + z)
+    contextw.close()
+    smemw.close()
+    logw.close()
+    if randint(0,1) == 1:
+        y=GoogleTranslator(source='auto', target='ja').translate(z)
+
+        with open("output.wav", "wb") as outfile:
+            outfile.write(voice(y).content)
+            await update.message.reply_voice("output.wav")
+        await update.message.reply_text("Audio transcription in english:" + "\n" + z)
+        await update.message.reply_text("Tokens used: "+str(response["usage"]["total_tokens"]))
+    else:
+        await update.message.reply_text(z)
+        await update.message.reply_text("Tokens used: "+str(response["usage"]["total_tokens"]))
+    os.system("python sm.py")
+
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -86,7 +159,7 @@ async def mem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
 
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("/start /help /sm /mem /inject /del")
+    await update.message.reply_text("/start /help /sm /mem /inject /del /audio")
     
 
 async def inject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -101,7 +174,19 @@ async def inject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         contextw.close()
     else:
         await update.message.reply_text("Nothing was injected.")
+
+
+async def audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message.text != "/audio":
+        y=update.message.text.replace("/audio " ,"",1)
+        with open("output.wav", "wb") as outfile:
+            outfile.write(voice(y).content)
+            await update.message.reply_voice("output.wav")
+
+    else:
+        await update.message.reply_text("No audio")
     
+
 async def dele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     open('memory.txt', 'w').close()
     open('lastmem.txt', 'w').close()
@@ -109,10 +194,12 @@ async def dele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     open('lastmem.txt','r+').write("User: Good morning Mihari! "+"\n"+"Mihari: Good morning! How are you?")
     await update.message.reply_text("Memory has been deleted.")
 
-    
-
-    
-
+def voice(x):
+    params_encoded = urllib.parse.urlencode({'text': x, 'speaker': 4}) 
+    request = requests.post(f'http://127.0.0.1:50021/audio_query?{params_encoded}')
+    params_encoded = urllib.parse.urlencode({'speaker': 4, 'enable_interrogative_upspeak': True})
+    request = requests.post(f'http://127.0.0.1:50021/synthesis?{params_encoded}', json=request.json())
+    return request
 
 
 def main() -> None:
@@ -127,10 +214,12 @@ def main() -> None:
     application.add_handler(CommandHandler("mem", mem))
     application.add_handler(CommandHandler("inject", inject))
     application.add_handler(CommandHandler("del", dele))
+    application.add_handler(CommandHandler("audio", audio))
 
 
     # on non command i.e message - echo the message on Telegram
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, engine))
+    application.add_handler(MessageHandler(filters.VOICE, voice_engine))
 
     # Run the bot until the user presses Ctrl-C
     application.run_polling()
